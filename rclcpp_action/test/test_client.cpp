@@ -24,7 +24,6 @@
 #include <rclcpp/clock.hpp>
 #include <rclcpp/exceptions.hpp>
 #include <rclcpp/executors.hpp>
-#include <rclcpp/executors/multi_threaded_executor.hpp>
 #include <rclcpp/node.hpp>
 #include <rclcpp/publisher.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -63,7 +62,7 @@ protected:
   using ActionCancelGoalRequest = ActionType::CancelGoalService::Request;
   using ActionCancelGoalResponse = ActionType::CancelGoalService::Response;
   using ActionStatusMessage = ActionType::GoalStatusMessage;
-  using ActionFeedbackMessage = ActionType::Feedback;
+  using ActionFeedbackMessage = ActionType::FeedbackMessage;
   using ActionFeedback = ActionType::Feedback;
 
   static void SetUpTestCase()
@@ -88,7 +87,7 @@ protected:
         ActionGoalResponse::SharedPtr response)
       {
         response->stamp = clock.now();
-        response->accepted = (request->order >= 0);
+        response->accepted = (request->request.order >= 0);
         if (response->accepted) {
           goals[request->uuid] = {request, response};
         }
@@ -119,16 +118,17 @@ protected:
           client_executor.spin_once();
           ActionFeedbackMessage feedback_message;
           feedback_message.uuid = goal_request->uuid;
-          feedback_message.sequence.push_back(0);
+          feedback_message.feedback.sequence.push_back(0);
           feedback_publisher->publish(feedback_message);
           client_executor.spin_once();
-          if (goal_request->order > 0) {
-            feedback_message.sequence.push_back(1);
+          if (goal_request->request.order > 0) {
+            feedback_message.feedback.sequence.push_back(1);
             feedback_publisher->publish(feedback_message);
             client_executor.spin_once();
-            for (int i = 1; i < goal_request->order; ++i) {
-              feedback_message.sequence.push_back(
-                feedback_message.sequence[i] + feedback_message.sequence[i - 1]);
+            for (int i = 1; i < goal_request->request.order; ++i) {
+              feedback_message.feedback.sequence.push_back(
+                feedback_message.feedback.sequence[i] +
+                feedback_message.feedback.sequence[i - 1]);
               feedback_publisher->publish(feedback_message);
               client_executor.spin_once();
             }
@@ -137,7 +137,7 @@ protected:
           status_message.status_list[0] = goal_status;
           status_publisher->publish(status_message);
           client_executor.spin_once();
-          response->sequence = feedback_message.sequence;
+          response->response.sequence = feedback_message.feedback.sequence;
           response->status = rclcpp_action::GoalStatus::STATUS_SUCCEEDED;
           goals.erase(request->uuid);
         } else {

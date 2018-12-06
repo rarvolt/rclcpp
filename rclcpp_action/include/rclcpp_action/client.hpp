@@ -261,11 +261,10 @@ public:
     auto promise = std::make_shared<std::promise<typename GoalHandle::SharedPtr>>();
     std::shared_future<typename GoalHandle::SharedPtr> future(promise->get_future());
     using GoalRequest = typename ActionT::GoalRequestService::Request;
-    // auto goal_request = std::make_shared<GoalRequest>();
     // goal_request->goal_id = this->generate_goal_id();
-    // goal_request->goal = goal;
-    auto goal_request = std::make_shared<GoalRequest>(goal);
+    auto goal_request = std::make_shared<GoalRequest>();
     goal_request->uuid = this->generate_goal_id();
+    goal_request->request = goal;
     this->send_goal_request(
       std::static_pointer_cast<void>(goal_request),
       [this, goal_request, callback, ignore_result, promise](
@@ -403,9 +402,8 @@ private:
   std::shared_ptr<void>
   create_feedback_message() const override
   {
-    // using FeedbackMessage = typename ActionT::FeedbackMessage;
-    // return std::shared_ptr<void>(new FeedbackMessage());
-    return std::shared_ptr<void>(new Feedback());
+    using FeedbackMessage = typename ActionT::FeedbackMessage;
+    return std::shared_ptr<void>(new FeedbackMessage());
   }
 
   /// \internal
@@ -413,12 +411,9 @@ private:
   handle_feedback_message(std::shared_ptr<void> message) override
   {
     std::lock_guard<std::mutex> guard(goal_handles_mutex_);
-    // using FeedbackMessage = typename ActionT::FeedbackMessage;
-    // typename FeedbackMessage::SharedPtr feedback_message =
-    //   std::static_pointer_cast<FeedbackMessage>(message);
-    typename Feedback::SharedPtr feedback_message =
-      std::static_pointer_cast<Feedback>(message);
-    // const GoalID & goal_id = feedback_message->goal_id;
+    using FeedbackMessage = typename ActionT::FeedbackMessage;
+    typename FeedbackMessage::SharedPtr feedback_message =
+      std::static_pointer_cast<FeedbackMessage>(message);
     const GoalID & goal_id = feedback_message->uuid;
     if (goal_handles_.count(goal_id) == 0) {
       RCLCPP_DEBUG(
@@ -427,8 +422,9 @@ private:
       return;
     }
     typename GoalHandle::SharedPtr goal_handle = goal_handles_[goal_id];
-    // goal_handle->call_feedback_callback(goal_handle, feedback_message->feedback);
-    goal_handle->call_feedback_callback(goal_handle, feedback_message);
+    auto feedback = std::make_shared<Feedback>();
+    *feedback = feedback_message->feedback;
+    goal_handle->call_feedback_callback(goal_handle, feedback);
   }
 
   /// \internal
@@ -480,12 +476,14 @@ private:
       std::static_pointer_cast<void>(goal_result_request),
       [goal_handle, this](std::shared_ptr<void> response) mutable
       {
+        using GoalResultResponse = typename ActionT::GoalResultService::Response;
+        auto result_response = std::static_pointer_cast<GoalResultResponse>(response);
         // Wrap the response in a struct with the fields a user cares about
         Result result;
-        using GoalResultResponse = typename ActionT::GoalResultService::Response;
-        result.response = std::static_pointer_cast<GoalResultResponse>(response);
+        result.response = std::make_shared<typename ActionT::Result>();
+        *result.response = result_response->response;
         result.goal_id = goal_handle->get_goal_id();
-        result.code = static_cast<ResultCode>(result.response->status);
+        result.code = static_cast<ResultCode>(result_response->status);
         goal_handle->set_result(result);
         std::lock_guard<std::mutex> lock(goal_handles_mutex_);
         goal_handles_.erase(goal_handle->get_goal_id());
